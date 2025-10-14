@@ -1,0 +1,207 @@
+﻿{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": { "type": "string" },
+    "location": { "type": "string" },
+    "office365ConnectionName": { "type": "string", "defaultValue": "office365" },
+    "keyVaultConnectionName": { "type": "string", "defaultValue": "keyvault-1" },
+    "kvName": { "type": "string" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/connections",
+      "apiVersion": "2016-06-01",
+      "name": "[parameters('office365ConnectionName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "[parameters('office365ConnectionName')]",
+        "api": {
+          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/office365')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Web/connections",
+      "apiVersion": "2016-06-01",
+      "name": "[parameters('keyVaultConnectionName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "[parameters('keyVaultConnectionName')]",
+        "parameterValueSet": {
+          "name": "oauthMI",
+          "values": {
+            "vaultName": { "value": "[parameters('kvName')]" }
+          }
+        },
+        "api": {
+          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/keyvault')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "$connections": {
+              "type": "Object",
+              "defaultValue": {}
+            }
+          },
+          "triggers": {
+            "Recurrence": {
+              "type": "Recurrence",
+              "recurrence": {
+                "frequency": "Day",
+                "interval": 1,
+                "timeZone": "India Standard Time"
+              }
+            }
+          },
+          "actions": {
+            "Initialize_table_rows": {
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "TableRows",
+                    "type": "String",
+                    "value": ""
+                  }
+                ]
+              },
+              "runAfter": {}
+            },
+            "List_secrets": {
+              "type": "ApiConnection",
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['keyvault-1']['connectionId']"
+                  }
+                },
+                "method": "get",
+                "path": "/secrets"
+              },
+              "runAfter": {
+                "Initialize_table_rows": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "For_each": {
+              "type": "Foreach",
+              "foreach": "@body('List_secrets')?['value']",
+              "actions": {
+                "Check_if_expiring_soon": {
+                  "type": "If",
+                  "expression": "@and(not(empty(items('For_each')?['validityEndTime'])), lessOrEquals(items('For_each')?['validityEndTime'], addDays(utcNow(), 30)))",
+                  "actions": {
+                    "Append_to_table_rows": {
+                      "type": "AppendToStringVariable",
+                      "inputs": {
+                        "name": "TableRows",
+                        "value": "@concat('<tr><td>', items('For_each')?['name'], '</td><td>', formatDateTime(items('For_each')?['validityEndTime'], 'dd-MMM-yyyy'), '</td></tr>')"
+                      },
+                      "runAfter": {}
+                    }
+                  },
+                  "else": { "actions": {} }
+                }
+              },
+              "runAfter": {
+                "List_secrets": [ "Succeeded" ]
+              }
+            },
+            "Check_if_any_rows": {
+              "type": "If",
+              "expression": "@greater(length(variables('TableRows')), 0)",
+              "actions": {
+                "Send_email_with_table": {
+                  "type": "ApiConnection",
+                  "inputs": {
+                    "host": {
+                      "connection": {
+                        "name": "@parameters('$connections')['office365']['connectionId']"
+                      }
+                    },
+                    "method": "post",
+                    "path": "/v2/Mail",
+                    "body": {
+                      "To": "tejas.s@aspentech.com",
+                      "Subject": "SSL Certification Expiration Summary",
+                      "Body": "@{concat('<html><body><p>Hi Team,</p><p>Here is the summary of SSL Certificates that are expiring soon:</p><table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse: collapse; font-family: Arial, sans-serif;\"><thead style=\"background-color: #f2f2f2;\"><tr><th>SSL Certificate Name</th><th>Expiration Date</th></tr></thead><tbody>', variables('TableRows'), '</tbody></table><p>Please take necessary action to renew or rotate these secrets before they expire. Thank you!</p><p>Best regards,<br/>Azure Automation</p></body></html>')}",
+                      "Importance": "Normal"
+                    }
+                  },
+                  "runAfter": {}
+                }
+              },
+              "else": {
+                "actions": {
+                  "Send_email_no_expiring_secrets": {
+                    "type": "ApiConnection",
+                    "inputs": {
+                      "host": {
+                        "connection": {
+                          "name": "@parameters('$connections')['office365']['connectionId']"
+                        }
+                      },
+                      "method": "post",
+                      "path": "/v2/Mail",
+                      "body": {
+                        "To": "tejas.s@aspentech.com",
+                        "Subject": "SSL Certification Expiration Summary",
+                        "Body": "<html><body><p>Hi Team,</p><p>No SSL certificates are expiring in the next 30 days.</p><p>Thank you,<br>Azure Automation</p></body></html>",
+                        "Importance": "Normal"
+                      }
+                    },
+                    "runAfter": {}
+                  }
+                }
+              },
+              "runAfter": {
+                "For_each": [ "Succeeded" ]
+              }
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "$connections": {
+            "value": {
+              "office365": {
+                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('office365ConnectionName'))]",
+                "connectionName": "[parameters('office365ConnectionName')]",
+                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/office365')]"
+              },
+              "keyvault-1": {
+                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('keyVaultConnectionName'))]",
+                "connectionName": "[parameters('keyVaultConnectionName')]",
+                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/keyvault')]",
+                "connectionProperties": {
+                  "authentication": { "type": "ManagedServiceIdentity" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/connections', parameters('office365ConnectionName'))]",
+        "[resourceId('Microsoft.Web/connections', parameters('keyVaultConnectionName'))]"
+      ]
+    }
+  ]
+}
+
