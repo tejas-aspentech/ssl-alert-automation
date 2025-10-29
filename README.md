@@ -1,15 +1,13 @@
 # ssl-alert-automation
 
-# **Architecture**
+### **Architecture**
 
 <img width="340" height="716" alt="image" src="https://github.com/user-attachments/assets/7b10e25c-ebfd-46a0-a406-8d08177ae401" />
 
 
-Here’s your content rewritten in **Markdown format**:
-
 ***
 
-# **Architecture: The Moving Parts**
+### **Architecture: The Moving Parts**
 
 *   **Azure Key Vault** — Source of truth for secrets/certificates.
 *   **Azure Logic App** — Orchestrates the daily job and email.
@@ -18,7 +16,7 @@ Here’s your content rewritten in **Markdown format**:
 
 ***
 
-## **Prerequisites**
+### **Prerequisites**
 
 *   **Az PowerShell modules** (`Az.Accounts`, `Az.Resources`, `Az.KeyVault`) installed for your user scope.
 *   **Owner/Contributor** role on the target subscription/resource group and rights to assign Key Vault access (RBAC or access policies).
@@ -26,7 +24,7 @@ Here’s your content rewritten in **Markdown format**:
 
 ***
 
-## **How the Automation Works (High Level)**
+### **How the Automation Works (High Level)**
 
 1.  **Daily trigger:** A Recurrence trigger fires once per day (set to India Standard Time in the sample).
 2.  **List secrets:** The Logic App calls the Key Vault connector to list secrets.
