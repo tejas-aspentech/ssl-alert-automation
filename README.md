@@ -1,5 +1,10 @@
 ## ssl-alert-automation
 
+### **Purpose:** 
+
+Automate daily email alerts for Azure Key Vault secrets/certificates that are expiring soon, using a Logic App deployed and configured by PowerShell. The Logic App enumerates Key Vault items, filters those expiring within the next N days (default 30), and emails a formatted HTML table to your recipients.
+
+ 
 ### **Architecture**
 
 <img width="340" height="716" alt="image" src="https://github.com/user-attachments/assets/7b10e25c-ebfd-46a0-a406-8d08177ae401" />
